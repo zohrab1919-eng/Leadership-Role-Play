@@ -49,3 +49,26 @@ export async function requestDebrief(debriefPrompt, apiKey) {
   }
   return data.choices[0].message.content;
 }
+
+export async function sendPreviewRequest(prompt, apiKey) {
+  const response = await fetch(API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 256,
+      messages: [
+        { role: 'user', content: prompt },
+      ],
+    }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.error?.message || `API error ${response.status}`);
+  }
+  return data.choices[0].message.content;
+}

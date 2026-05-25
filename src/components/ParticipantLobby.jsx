@@ -5,6 +5,44 @@ function decodeConfig(encoded) {
   return JSON.parse(decodeURIComponent(escape(atob(encoded))));
 }
 
+// Support old flat-format configs (pre-multi-persona) by wrapping in personas array.
+// Also handles old multi-persona format that used personaName/personaRole/etc.
+function normaliseConfig(cfg) {
+  // Already has a personas array
+  if (cfg.personas && Array.isArray(cfg.personas)) {
+    // Ensure session-level endInMind exists (old multi-persona format stored it per-persona)
+    if (!cfg.endInMind) {
+      const firstEndInMind = cfg.personas[0]?.endInMind || '';
+      return { ...cfg, endInMind: firstEndInMind };
+    }
+    return cfg;
+  }
+  // Oldest flat format — extract persona fields and wrap
+  const {
+    personaName, personaRole, personaTraits, situationBrief, endInMind, ...shared
+  } = cfg;
+  return {
+    ...shared,
+    endInMind: endInMind || '',
+    personas: [{ personaName, personaRole, personaTraits, situationBrief, endInMind }],
+  };
+}
+
+// Get display name from either new or old persona format
+function personaDisplayName(p) {
+  return p?.name || p?.personaName || 'Employee';
+}
+
+// Get display role from either new or old persona format
+function personaDisplayRole(p) {
+  return p?.role || p?.personaRole || '';
+}
+
+// Get situation summary from either new or old persona format
+function personaSituation(p) {
+  return p?.situationWhat || p?.situationBrief || '';
+}
+
 export default function ParticipantLobby() {
   const {
     sessionConfig, setSessionConfig,
@@ -35,15 +73,15 @@ export default function ParticipantLobby() {
     if (s) {
       try {
         const cfg = decodeConfig(s);
-        // Normalise: support both old flat format and new personas array
         const normalised = normaliseConfig(cfg);
         setSessionConfig(normalised);
-        setView(normalised.personas.length > 1 ? 'personaSelect' : 'brief');
+        resolveView(normalised, setSelectedPersona, setView);
       } catch {
         setError('The session link appears to be invalid. Ask your facilitator for a new one.');
       }
     }
-  }, [setSessionConfig]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleLoadCode = () => {
     setError('');
@@ -51,7 +89,7 @@ export default function ParticipantLobby() {
       const cfg = decodeConfig(code.trim());
       const normalised = normaliseConfig(cfg);
       setSessionConfig(normalised);
-      setView(normalised.personas.length > 1 ? 'personaSelect' : 'brief');
+      resolveView(normalised, setSelectedPersona, setView);
     } catch {
       setError('Invalid session code. Please check with your facilitator.');
     }
@@ -69,6 +107,7 @@ export default function ParticipantLobby() {
 
   const persona = selectedPersona ?? sessionConfig?.personas?.[0];
 
+  // ── Enter screen ──
   if (view === 'enter') {
     return (
       <div className="min-h-screen bg-navy flex flex-col">
@@ -102,7 +141,7 @@ export default function ParticipantLobby() {
                     type="password"
                     value={apiKey}
                     onChange={e => setApiKey(e.target.value)}
-                    placeholder="sk-ant-..."
+                    placeholder="sk-..."
                     className="w-full border border-navy/20 rounded-xl px-4 py-2.5 text-navy placeholder:text-navy/30 text-sm focus:outline-none focus:ring-2 focus:ring-amber/40"
                   />
                   <p className="text-xs text-navy/40 mt-1">Required if not pre-configured by your facilitator.</p>
@@ -130,6 +169,7 @@ export default function ParticipantLobby() {
     );
   }
 
+  // ── Persona Select screen (Facilitator Assigns mode with 2+ personas) ──
   if (view === 'personaSelect' && sessionConfig) {
     const personas = sessionConfig.personas;
     return (
@@ -141,7 +181,9 @@ export default function ParticipantLobby() {
             </div>
             <div>
               <h1 className="font-heading text-lg text-white font-bold">Choose Your Scenario</h1>
-              <p className="text-white/50 text-xs">{personas.length} scenarios available · {sessionConfig.topic || 'Leadership Practice'}</p>
+              <p className="text-white/50 text-xs">
+                {personas.length} scenarios available · {sessionConfig.topic || 'Leadership Practice'}
+              </p>
             </div>
           </div>
         </header>
@@ -152,35 +194,49 @@ export default function ParticipantLobby() {
           </p>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {personas.map((p, i) => (
-              <button
-                key={i}
-                onClick={() => handleSelectPersona(p)}
-                className="bg-white rounded-2xl p-5 text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] transition-all group"
-              >
-                <div className="flex items-start justify-between mb-3">
-                  <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-heading font-bold text-lg group-hover:bg-amber/15 group-hover:text-amber transition-colors">
-                    {i + 1}
+            {personas.map((p, i) => {
+              const name = personaDisplayName(p);
+              const role = personaDisplayRole(p);
+              const situation = personaSituation(p);
+              return (
+                <button
+                  key={i}
+                  onClick={() => handleSelectPersona(p)}
+                  className="bg-white rounded-2xl p-5 text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 active:scale-[0.98] transition-all group"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="w-10 h-10 bg-navy/10 rounded-xl flex items-center justify-center text-navy font-heading font-bold text-lg group-hover:bg-amber/15 group-hover:text-amber transition-colors">
+                      {i + 1}
+                    </div>
+                    <span className="text-[11px] font-semibold text-amber uppercase tracking-wider bg-amber/10 px-2 py-0.5 rounded-full">
+                      Scenario {i + 1}
+                    </span>
                   </div>
-                  <span className="text-[11px] font-semibold text-amber uppercase tracking-wider bg-amber/10 px-2 py-0.5 rounded-full">
-                    Scenario {i + 1}
-                  </span>
-                </div>
-                <p className="font-heading text-navy font-bold text-base leading-tight mb-0.5">{p.personaName}</p>
-                <p className="text-navy/50 text-xs mb-3">{p.personaRole}</p>
-                <p className="text-navy/70 text-sm leading-relaxed line-clamp-3">{p.situationBrief}</p>
-                <div className="mt-4 flex items-center gap-1 text-amber text-xs font-bold">
-                  Start with {p.personaName.split(' ')[0]} →
-                </div>
-              </button>
-            ))}
+                  <p className="font-heading text-navy font-bold text-base leading-tight mb-0.5">{name}</p>
+                  <p className="text-navy/50 text-xs mb-3">{role}</p>
+                  {situation && (
+                    <p className="text-navy/70 text-sm leading-relaxed line-clamp-3">{situation}</p>
+                  )}
+                  <div className="mt-4 flex items-center gap-1 text-amber text-xs font-bold">
+                    Start with {name.split(' ')[0]} →
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
     );
   }
 
+  // ── Brief screen ──
   if (view === 'brief' && sessionConfig && persona) {
+    const name = personaDisplayName(persona);
+    const role = personaDisplayRole(persona);
+    const isNewFormat = !!(persona.name && persona.behaviouralTags);
+    // endInMind lives at session level (new) or persona level (old)
+    const endInMind = sessionConfig.endInMind || persona.endInMind || '';
+
     return (
       <div className="min-h-screen bg-navy">
         <header className="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/10 px-5 py-3">
@@ -192,7 +248,7 @@ export default function ParticipantLobby() {
               <h1 className="font-heading text-lg text-white font-bold truncate">Your Scenario Brief</h1>
               <p className="text-white/50 text-xs">Read carefully before starting</p>
             </div>
-            {sessionConfig.personas.length > 1 && (
+            {sessionConfig.personas.length > 1 && sessionConfig.personaAssignment !== 'random' && (
               <button
                 onClick={() => { setSelectedPersona(null); setView('personaSelect'); }}
                 className="text-white/40 text-xs hover:text-white/70 transition shrink-0"
@@ -210,12 +266,29 @@ export default function ParticipantLobby() {
             <p className="text-[11px] font-bold text-amber uppercase tracking-wider mb-1">Your Role</p>
             <p className="text-navy text-sm leading-relaxed">
               You are the <strong>manager</strong>. You will have a one-on-one conversation with{' '}
-              <strong>{persona.personaName}</strong>, {persona.personaRole}.
+              <strong>{name}</strong>{role ? `, ${role}` : ''}.
             </p>
           </div>
 
-          {sessionConfig.backgroundContext && <InfoBlock label="Background" value={sessionConfig.backgroundContext} />}
-          <InfoBlock label="The Situation" value={persona.situationBrief} />
+          {sessionConfig.backgroundContext && (
+            <InfoBlock label="Background" value={sessionConfig.backgroundContext} />
+          )}
+
+          {/* Situation — new format shows structured fields; old format shows situationBrief */}
+          {isNewFormat ? (
+            <div className="bg-white rounded-2xl p-5 shadow-sm space-y-3">
+              <p className="text-[11px] font-bold text-amber uppercase tracking-wider">The Situation</p>
+              <p className="text-navy/80 text-sm leading-relaxed">{persona.situationWhat}</p>
+              {persona.situationHistory && (
+                <div className="border-t border-navy/8 pt-3">
+                  <p className="text-[11px] font-semibold text-navy/50 uppercase tracking-wider mb-1">Prior History</p>
+                  <p className="text-navy/70 text-sm leading-relaxed">{persona.situationHistory}</p>
+                </div>
+              )}
+            </div>
+          ) : (
+            <InfoBlock label="The Situation" value={persona.situationBrief} />
+          )}
 
           {sessionConfig.framework && (
             <div className="bg-white rounded-2xl p-5 shadow-sm">
@@ -227,10 +300,12 @@ export default function ParticipantLobby() {
             </div>
           )}
 
-          <div className="bg-amber/10 border border-amber/30 rounded-2xl p-5">
-            <p className="text-[11px] font-bold text-amber uppercase tracking-wider mb-1">Desired Outcome</p>
-            <p className="text-navy/80 text-sm leading-relaxed italic">{persona.endInMind}</p>
-          </div>
+          {endInMind && (
+            <div className="bg-amber/10 border border-amber/30 rounded-2xl p-5">
+              <p className="text-[11px] font-bold text-amber uppercase tracking-wider mb-1">Desired Outcome</p>
+              <p className="text-navy/80 text-sm leading-relaxed italic">{endInMind}</p>
+            </div>
+          )}
 
           <div className="bg-white rounded-2xl p-5 shadow-sm">
             <label className="block text-sm font-medium text-navy/70 mb-1.5">Your First Name</label>
@@ -266,12 +341,23 @@ function InfoBlock({ label, value }) {
   );
 }
 
-// Support old flat-format configs (pre-multi-persona) by wrapping in personas array
-function normaliseConfig(cfg) {
-  if (cfg.personas && Array.isArray(cfg.personas)) return cfg;
-  const { personaName, personaRole, personaTraits, situationBrief, endInMind, ...shared } = cfg;
-  return {
-    ...shared,
-    personas: [{ personaName, personaRole, personaTraits, situationBrief, endInMind }],
-  };
+// Decide which view to show after loading config:
+// - Random assignment → pick random persona, show brief
+// - 1 persona → show brief
+// - Multiple personas, facilitator assigns → show personaSelect
+function resolveView(config, setSelectedPersona, setView) {
+  const personas = config.personas || [];
+  if (personas.length === 0) return;
+
+  if (personas.length === 1) {
+    setSelectedPersona(personas[0]);
+    setView('brief');
+  } else if (config.personaAssignment === 'random') {
+    const picked = personas[Math.floor(Math.random() * personas.length)];
+    setSelectedPersona(picked);
+    setView('brief');
+  } else {
+    // facilitator assigns or default — let participant choose
+    setView('personaSelect');
+  }
 }

@@ -1,21 +1,28 @@
 export function buildDebriefPrompt(config, conversationHistory, participantName) {
   const name = participantName || 'Manager';
+
+  // Support both new format (name) and old format (personaName)
+  const personaDisplayName = config.name || config.personaName || 'Employee';
+
   const transcript = conversationHistory
     .map(msg =>
-      `${msg.role === 'user' ? name : config.personaName}: ${msg.content}`
+      `${msg.role === 'user' ? name : personaDisplayName}: ${msg.content}`
     )
     .join('\n\n');
 
-  return `The following conversation was a role-play practice. ${name} was playing the role of manager, and the AI played ${config.personaName} (${config.personaRole}).
+  // endInMind can be at session/config level (new) or persona level (old)
+  const endInMind = config.endInMind || '';
+
+  return `The following conversation was a role-play practice. ${name} was playing the role of manager, and the AI played ${personaDisplayName} (${config.role || config.personaRole || ''}).
 
 CONVERSATION TRANSCRIPT:
 ${transcript}
 
 ---
 
-Framework ${name} was supposed to apply: ${config.framework}
+Framework ${name} was supposed to apply: ${config.framework || ''}
 Framework steps: ${config.frameworkSteps || 'Not specified'}
-Desired end-in-mind: ${config.endInMind}
+Desired end-in-mind: ${endInMind}
 
 Evaluate ${name}'s performance. Return ONLY valid JSON with exactly this structure, no other text:
 

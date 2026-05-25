@@ -43,7 +43,7 @@ export default function DebriefScreen() {
             <div>
               <h1 className="font-heading text-xl text-white font-bold">Your Debrief</h1>
               <p className="text-white/40 text-xs mt-0.5">
-                {participantName || 'Participant'} · {effectiveConfig?.personaName}
+                {participantName || 'Participant'} · {effectiveConfig?.name || effectiveConfig?.personaName}
               </p>
             </div>
           </div>
@@ -130,7 +130,7 @@ export default function DebriefScreen() {
                       isUser ? 'bg-amber/10 text-navy' : 'bg-navy/5 text-navy'
                     }`}>
                       <p className="font-semibold text-[11px] mb-1 text-navy/50">
-                        {isUser ? (participantName || 'Manager') : effectiveConfig?.personaName}
+                        {isUser ? (participantName || 'Manager') : (effectiveConfig?.name || effectiveConfig?.personaName)}
                       </p>
                       {msg.content}
                     </div>

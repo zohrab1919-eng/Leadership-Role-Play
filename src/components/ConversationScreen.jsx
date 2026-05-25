@@ -117,8 +117,12 @@ export default function ConversationScreen() {
             <img src="/enablerz-logo.png" alt="Enablerz" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0">
-            <p className="text-white font-semibold text-sm truncate">{effectiveConfig?.personaName}</p>
-            <p className="text-white/40 text-xs truncate">{effectiveConfig?.personaRole}</p>
+            <p className="text-white font-semibold text-sm truncate">
+              {effectiveConfig?.name || effectiveConfig?.personaName}
+            </p>
+            <p className="text-white/40 text-xs truncate">
+              {effectiveConfig?.role || effectiveConfig?.personaRole}
+            </p>
           </div>
         </div>
         <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -151,14 +155,14 @@ export default function ConversationScreen() {
             key={i}
             role={msg.role}
             content={msg.content}
-            name={msg.role === 'user' ? (participantName || 'You') : effectiveConfig?.personaName}
+            name={msg.role === 'user' ? (participantName || 'You') : (effectiveConfig?.name || effectiveConfig?.personaName)}
           />
         ))}
 
         {sending && (
           <div className="flex items-end gap-2">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-white text-xs font-bold shrink-0">
-              {effectiveConfig?.personaName?.[0]}
+              {(effectiveConfig?.name || effectiveConfig?.personaName)?.[0]}
             </div>
             <div className="bg-white/10 rounded-2xl rounded-bl-none px-4 py-3">
               <div className="flex gap-1.5 items-center h-4">
