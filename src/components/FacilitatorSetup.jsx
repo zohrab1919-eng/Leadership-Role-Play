@@ -73,7 +73,7 @@ function formatDate(iso) {
 
 export default function FacilitatorSetup() {
   const { apiKey, setApiKey, setSessionConfig } = useSession();
-  const { templates, saveTemplate, updateTemplate, deleteTemplate } = useTemplates();
+  const { templates, saveTemplate, updateTemplate, renameTemplate, duplicateTemplate, deleteTemplate } = useTemplates();
 
   const [config, setConfig] = useState(DEFAULTS);
   const [launched, setLaunched] = useState(false);
@@ -91,6 +91,8 @@ export default function FacilitatorSetup() {
   // Template management
   const [templatesExpanded, setTemplatesExpanded] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [renamingId, setRenamingId] = useState(null);
+  const [renamingValue, setRenamingValue] = useState('');
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [activeTemplateId, setActiveTemplateId] = useState(null);
@@ -224,6 +226,32 @@ export default function FacilitatorSetup() {
     setTemplateFlash(`Loaded: "${tpl.name}" — make any changes then launch.`);
     setTimeout(() => setTemplateFlash(''), 4000);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // ── Template rename ──
+  const startRename = (tpl) => {
+    setRenamingId(tpl.id);
+    setRenamingValue(tpl.name);
+    setDeleteConfirmId(null);
+  };
+
+  const commitRename = () => {
+    if (renamingValue.trim()) {
+      renameTemplate(renamingId, renamingValue);
+      if (activeTemplateId === renamingId) {
+        // Flash is not needed — the card updates in place
+      }
+    }
+    setRenamingId(null);
+    setRenamingValue('');
+  };
+
+  const handleDuplicate = (tpl) => {
+    const newId = duplicateTemplate(tpl.id);
+    if (newId) {
+      setTemplateFlash(`Duplicated as "${tpl.name} (Copy)".`);
+      setTimeout(() => setTemplateFlash(''), 3000);
+    }
   };
 
   // ── QR download ──
@@ -424,7 +452,7 @@ export default function FacilitatorSetup() {
                 <div className="text-center py-6">
                   <p className="text-navy/40 text-sm">No templates saved yet.</p>
                   <p className="text-navy/30 text-xs mt-1">
-                    Fill in a session below and click <strong>Save as Template</strong> to reuse it later.
+                    Fill in a session below and click <strong>Save as New Template</strong> to reuse it later.
                   </p>
                 </div>
               ) : (
@@ -438,49 +466,94 @@ export default function FacilitatorSetup() {
                           : 'border-navy/12 hover:border-navy/25'
                       }`}
                     >
+                      {/* Name row — inline rename when editing */}
                       <div>
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="font-semibold text-navy text-sm leading-tight">{tpl.name}</p>
-                          {activeTemplateId === tpl.id && (
-                            <span className="text-[10px] bg-amber/20 text-amber font-bold px-1.5 py-0.5 rounded-full shrink-0">
-                              Active
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-navy/50 text-xs mt-0.5">
+                        {renamingId === tpl.id ? (
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <input
+                              autoFocus
+                              value={renamingValue}
+                              onChange={e => setRenamingValue(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') commitRename();
+                                if (e.key === 'Escape') { setRenamingId(null); setRenamingValue(''); }
+                              }}
+                              className="flex-1 border border-amber/50 rounded-lg px-2.5 py-1.5 text-navy text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber/40 bg-white min-w-0"
+                            />
+                            <button
+                              onClick={commitRename}
+                              disabled={!renamingValue.trim()}
+                              className="text-green-600 hover:text-green-700 font-bold text-sm px-1 disabled:opacity-30"
+                              title="Save name"
+                            >✓</button>
+                            <button
+                              onClick={() => { setRenamingId(null); setRenamingValue(''); }}
+                              className="text-navy/30 hover:text-navy/60 text-sm px-1"
+                              title="Cancel"
+                            >✕</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-2 mb-0.5">
+                            <button
+                              onClick={() => startRename(tpl)}
+                              className="font-semibold text-navy text-sm leading-tight text-left hover:text-amber transition-colors group flex items-center gap-1.5"
+                              title="Click to rename"
+                            >
+                              {tpl.name}
+                              <span className="opacity-0 group-hover:opacity-60 text-[10px] transition-opacity">✎</span>
+                            </button>
+                            {activeTemplateId === tpl.id && (
+                              <span className="text-[10px] bg-amber/20 text-amber font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        <p className="text-navy/50 text-xs">
                           {tpl.config.framework || 'No framework'} · {tpl.config.personas?.length || 0} persona{tpl.config.personas?.length !== 1 ? 's' : ''}
                         </p>
                         <p className="text-navy/30 text-[11px] mt-0.5">{formatDate(tpl.savedAt)}</p>
                       </div>
-                      <div className="flex gap-2 items-center">
+
+                      {/* Actions row */}
+                      <div className="flex gap-1.5 items-center">
+                        {/* Edit (load into form) */}
                         <button
                           onClick={() => handleLoadTemplate(tpl)}
                           className="flex-1 bg-amber/15 hover:bg-amber/25 text-amber font-bold text-xs py-2 rounded-lg transition"
                         >
-                          Load
+                          Edit
                         </button>
+                        {/* Duplicate */}
+                        <button
+                          onClick={() => handleDuplicate(tpl)}
+                          className="flex-1 bg-navy/8 hover:bg-navy/15 text-navy/60 hover:text-navy font-semibold text-xs py-2 rounded-lg transition"
+                          title="Save as new copy"
+                        >
+                          ⧉ Duplicate
+                        </button>
+                        {/* Delete */}
                         {deleteConfirmId === tpl.id ? (
-                          <div className="flex gap-1 flex-1">
+                          <div className="flex gap-1">
                             <button
-                              onClick={() => { deleteTemplate(tpl.id); setDeleteConfirmId(null); if (activeTemplateId === tpl.id) setActiveTemplateId(null); }}
-                              className="flex-1 bg-red-500 text-white text-xs font-bold py-2 rounded-lg"
-                            >
-                              Delete
-                            </button>
+                              onClick={() => {
+                                deleteTemplate(tpl.id);
+                                setDeleteConfirmId(null);
+                                if (activeTemplateId === tpl.id) setActiveTemplateId(null);
+                              }}
+                              className="bg-red-500 text-white text-xs font-bold py-2 px-2.5 rounded-lg"
+                            >Del</button>
                             <button
                               onClick={() => setDeleteConfirmId(null)}
-                              className="flex-1 bg-navy/10 text-navy text-xs font-semibold py-2 rounded-lg"
-                            >
-                              No
-                            </button>
+                              className="bg-navy/10 text-navy text-xs font-semibold py-2 px-2 rounded-lg"
+                            >No</button>
                           </div>
                         ) : (
                           <button
-                            onClick={() => setDeleteConfirmId(tpl.id)}
-                            className="px-3 text-navy/30 hover:text-red-400 text-xs font-semibold py-2 rounded-lg hover:bg-red-50 transition"
-                          >
-                            ✕
-                          </button>
+                            onClick={() => { setDeleteConfirmId(tpl.id); setRenamingId(null); }}
+                            className="px-2.5 text-navy/25 hover:text-red-400 text-xs font-semibold py-2 rounded-lg hover:bg-red-50 transition"
+                            title="Delete template"
+                          >✕</button>
                         )}
                       </div>
                     </div>
@@ -676,7 +749,7 @@ export default function FacilitatorSetup() {
         {/* ── Template Save Actions ── */}
         {saveDialogOpen ? (
           <div className="bg-amber/10 border border-amber/30 rounded-xl p-4 space-y-3">
-            <p className="text-navy text-sm font-semibold">Save as Template</p>
+            <p className="text-navy text-sm font-semibold">Save as New Template</p>
             <input
               type="text"
               value={templateName}
@@ -708,7 +781,7 @@ export default function FacilitatorSetup() {
               onClick={openSaveDialog}
               className="flex-1 bg-white/8 text-white/60 font-semibold py-3 rounded-2xl text-sm hover:bg-white/12 hover:text-white/80 transition border border-white/10"
             >
-              💾 Save as Template
+              💾 Save as New Template
             </button>
             {activeTemplateId && (
               <button

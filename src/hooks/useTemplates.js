@@ -60,11 +60,36 @@ export function useTemplates() {
     persist(next);
   };
 
+  const renameTemplate = (id, name) => {
+    if (!name?.trim()) return;
+    const next = templates.map(t =>
+      t.id === id ? { ...t, name: name.trim() } : t
+    );
+    setTemplates(next);
+    persist(next);
+  };
+
+  const duplicateTemplate = (id) => {
+    const original = templates.find(t => t.id === id);
+    if (!original) return null;
+    const newId = `tpl_${Date.now()}`;
+    const copy = {
+      ...original,
+      id: newId,
+      name: `${original.name} (Copy)`,
+      savedAt: new Date().toISOString(),
+    };
+    const next = [...templates, copy];
+    setTemplates(next);
+    persist(next);
+    return newId;
+  };
+
   const deleteTemplate = (id) => {
     const next = templates.filter(t => t.id !== id);
     setTemplates(next);
     persist(next);
   };
 
-  return { templates, saveTemplate, updateTemplate, deleteTemplate };
+  return { templates, saveTemplate, updateTemplate, renameTemplate, duplicateTemplate, deleteTemplate };
 }
