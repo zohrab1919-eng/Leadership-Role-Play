@@ -1,6 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef, useMemo } from 'react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { useSession } from '../context/SessionContext';
 import PersonaCard from './PersonaCard';
+import { useTemplates } from '../hooks/useTemplates';
 
 const DEFAULT_PERSONA = {
   id: '',
@@ -27,8 +29,13 @@ const DEFAULTS = {
   personas: [{ ...DEFAULT_PERSONA, id: 'persona_1' }],
 };
 
+// Always strips previewSummary from personas — participants don't need it
 function encodeConfig(config) {
-  return btoa(unescape(encodeURIComponent(JSON.stringify(config))));
+  const slim = {
+    ...config,
+    personas: (config.personas || []).map(({ previewSummary: _p, ...rest }) => rest),
+  };
+  return btoa(unescape(encodeURIComponent(JSON.stringify(slim))));
 }
 
 function validateConfig(config) {
@@ -49,20 +56,56 @@ function validateConfig(config) {
     if (!p.situationEmployeePOV?.trim()) personas[i].situationEmployeePOV = 'Required';
   });
 
-  const hasSharedErrors = Object.keys(shared).length > 0;
-  const hasPersonaErrors = personas.some(p => Object.keys(p).length > 0);
+  return {
+    shared,
+    personas,
+    hasErrors: Object.keys(shared).length > 0 || personas.some(p => Object.keys(p).length > 0),
+  };
+}
 
-  return { shared, personas, hasErrors: hasSharedErrors || hasPersonaErrors };
+function formatDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString('en-MY', { day: 'numeric', month: 'short', year: 'numeric' });
+  } catch {
+    return '';
+  }
 }
 
 export default function FacilitatorSetup() {
   const { apiKey, setApiKey, setSessionConfig } = useSession();
+  const { templates, saveTemplate, updateTemplate, deleteTemplate } = useTemplates();
+
   const [config, setConfig] = useState(DEFAULTS);
   const [launched, setLaunched] = useState(false);
   const [sessionUrl, setSessionUrl] = useState('');
   const [copied, setCopied] = useState(false);
   const [fieldErrors, setFieldErrors] = useState({ shared: {}, personas: [{}] });
 
+  // QR code
+  const [showQR, setShowQR] = useState(false);
+  const qrWrapRef = useRef(null);
+
+  // Session reset
+  const [resetConfirm, setResetConfirm] = useState(false);
+
+  // Template management
+  const [templatesExpanded, setTemplatesExpanded] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [activeTemplateId, setActiveTemplateId] = useState(null);
+  const [templateFlash, setTemplateFlash] = useState(''); // success message
+
+  // ── Slim URL for QR (strips previewSummary) ──
+  const slimUrl = useMemo(() => {
+    if (!sessionUrl) return '';
+    return sessionUrl; // already stripped by encodeConfig
+  }, [sessionUrl]);
+
+  const qrTooLong = slimUrl.length > 2953;
+  const qrLong = !qrTooLong && slimUrl.length > 2200;
+
+  // ── Config setters ──
   const setShared = (field, value) => {
     setConfig(prev => ({ ...prev, [field]: value }));
     if (fieldErrors.shared[field]) {
@@ -87,39 +130,35 @@ export default function FacilitatorSetup() {
   const addPersona = () => {
     if (config.personas.length >= 4) return;
     const nextId = `persona_${config.personas.length + 1}`;
-    setConfig(prev => ({
-      ...prev,
-      personas: [...prev.personas, { ...DEFAULT_PERSONA, id: nextId }],
-    }));
+    setConfig(prev => ({ ...prev, personas: [...prev.personas, { ...DEFAULT_PERSONA, id: nextId }] }));
     setFieldErrors(prev => ({ ...prev, personas: [...prev.personas, {}] }));
   };
 
   const removePersona = (index) => {
-    setConfig(prev => ({
-      ...prev,
-      personas: prev.personas.filter((_, i) => i !== index),
-    }));
-    setFieldErrors(prev => ({
-      ...prev,
-      personas: prev.personas.filter((_, i) => i !== index),
-    }));
+    setConfig(prev => ({ ...prev, personas: prev.personas.filter((_, i) => i !== index) }));
+    setFieldErrors(prev => ({ ...prev, personas: prev.personas.filter((_, i) => i !== index) }));
   };
 
+  // ── Launch ──
   const handleLaunch = () => {
     const validation = validateConfig(config);
     if (validation.hasErrors) {
       setFieldErrors({ shared: validation.shared, personas: validation.personas });
       setTimeout(() => {
-        const firstError = document.querySelector('[data-field-error="true"]');
-        if (firstError) firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const el = document.querySelector('[data-field-error="true"]');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }, 60);
       return;
     }
-    const encoded = encodeConfig(config);
+    const newConfig = { ...config, sessionId: Date.now() };
+    setConfig(newConfig);
+    const encoded = encodeConfig(newConfig);
     const url = `${window.location.origin}/?s=${encoded}`;
     setSessionUrl(url);
-    setSessionConfig(config);
+    setSessionConfig(newConfig);
     setLaunched(true);
+    setResetConfirm(false);
+    setShowQR(false);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -129,13 +168,89 @@ export default function FacilitatorSetup() {
     setTimeout(() => setCopied(false), 2500);
   };
 
+  // ── Reset Session ──
+  const handleReset = () => {
+    // Re-generate a fresh URL with a new sessionId so old sessions are effectively orphaned
+    const newConfig = { ...config, sessionId: Date.now() };
+    setConfig(newConfig);
+    const encoded = encodeConfig(newConfig);
+    const url = `${window.location.origin}/?s=${encoded}`;
+    setSessionUrl(url);
+    setSessionConfig(newConfig);
+    setResetConfirm(false);
+    setShowQR(false);
+    setCopied(false);
+    setTemplateFlash('Session reset — a new link has been generated. Share it with participants.');
+    setTimeout(() => setTemplateFlash(''), 5000);
+  };
+
+  // ── Template save ──
+  const openSaveDialog = () => {
+    setTemplateName(config.topic?.trim() || '');
+    setSaveDialogOpen(true);
+  };
+
+  const handleSaveTemplate = () => {
+    const id = saveTemplate(config, templateName);
+    setActiveTemplateId(id);
+    setSaveDialogOpen(false);
+    setTemplatesExpanded(true);
+    setTemplateFlash('Template saved successfully.');
+    setTimeout(() => setTemplateFlash(''), 3000);
+  };
+
+  const handleUpdateTemplate = () => {
+    if (!activeTemplateId) return;
+    const tpl = templates.find(t => t.id === activeTemplateId);
+    updateTemplate(activeTemplateId, config, tpl?.name);
+    setTemplateFlash('Template updated.');
+    setTimeout(() => setTemplateFlash(''), 3000);
+  };
+
+  const handleLoadTemplate = (tpl) => {
+    const loaded = {
+      ...DEFAULTS,
+      ...tpl.config,
+      personas: (tpl.config.personas || []).map((p, i) => ({
+        ...DEFAULT_PERSONA,
+        ...p,
+        id: p.id || `persona_${i + 1}`,
+      })),
+    };
+    setConfig(loaded);
+    setActiveTemplateId(tpl.id);
+    setFieldErrors({ shared: {}, personas: (loaded.personas || []).map(() => ({})) });
+    setLaunched(false);
+    setTemplateFlash(`Loaded: "${tpl.name}" — make any changes then launch.`);
+    setTimeout(() => setTemplateFlash(''), 4000);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // ── QR download ──
+  const downloadQR = () => {
+    if (!qrWrapRef.current) return;
+    const canvas = qrWrapRef.current.querySelector('canvas');
+    if (!canvas) return;
+    const url = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.download = `session-qr.png`;
+    a.href = url;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
   const hasAnyErrors =
     Object.values(fieldErrors.shared || {}).some(Boolean) ||
     (fieldErrors.personas || []).some(p => Object.values(p || {}).some(Boolean));
 
+  const activeTemplateName = activeTemplateId
+    ? templates.find(t => t.id === activeTemplateId)?.name
+    : null;
+
   return (
     <div className="min-h-screen bg-navy">
-      {/* Header */}
+      {/* ── Header ── */}
       <header className="sticky top-0 z-10 bg-navy/95 backdrop-blur border-b border-white/10 px-5 py-3">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -153,41 +268,245 @@ export default function FacilitatorSetup() {
         </div>
       </header>
 
-      {/* Launch Banner */}
+      {/* ── Flash messages ── */}
+      {templateFlash && (
+        <div className="bg-green-600/20 border-b border-green-500/30 px-5 py-3">
+          <p className="max-w-2xl mx-auto text-green-400 text-sm font-medium">{templateFlash}</p>
+        </div>
+      )}
+
+      {/* ── Launch Banner ── */}
       {launched && (
-        <div className="bg-green-600/20 border-b border-green-500/30 px-5 py-4">
-          <div className="max-w-2xl mx-auto">
-            <p className="text-green-400 font-semibold text-sm mb-1">
-              Session launched — {config.personas.length} persona{config.personas.length > 1 ? 's' : ''} configured
-            </p>
-            <p className="text-white/60 text-xs mb-3">
-              Share the link below. Participants open it on their own devices.
-            </p>
-            <div className="bg-navy/60 rounded-xl p-3 mb-3 border border-white/10">
+        <div className="bg-green-600/15 border-b border-green-500/25 px-5 py-5">
+          <div className="max-w-2xl mx-auto space-y-4">
+
+            {/* Status line */}
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-green-400 font-semibold text-sm">
+                ✓ Session live — {config.personas.length} persona{config.personas.length > 1 ? 's' : ''} configured
+              </p>
+              <span className="text-white/40 text-[11px]">{config.topic || 'No topic set'}</span>
+            </div>
+
+            {/* URL */}
+            <div className="bg-navy/60 rounded-xl p-3 border border-white/10">
               <p className="text-[11px] font-semibold text-amber uppercase tracking-wider mb-1">Participant Link</p>
               <p className="text-white/80 text-xs break-all font-mono leading-relaxed">{sessionUrl}</p>
             </div>
-            <div className="flex gap-2">
+
+            {/* Action buttons row 1 */}
+            <div className="flex gap-2 flex-wrap">
               <button
                 onClick={handleCopy}
-                className="flex-1 bg-amber text-navy font-bold py-2.5 rounded-xl text-sm hover:bg-amber/90 transition"
+                className="flex-1 min-w-[120px] bg-amber text-navy font-bold py-2.5 rounded-xl text-sm hover:bg-amber/90 transition"
               >
-                {copied ? '✓ Copied!' : 'Copy Link'}
+                {copied ? '✓ Copied!' : '⎘ Copy Link'}
+              </button>
+              <button
+                onClick={() => { setShowQR(v => !v); }}
+                className={`flex-1 min-w-[120px] font-bold py-2.5 rounded-xl text-sm transition ${
+                  showQR ? 'bg-white/20 text-white' : 'bg-white/10 text-white/70 hover:bg-white/15 hover:text-white'
+                }`}
+              >
+                {showQR ? '▲ Hide QR' : '⬛ Show QR'}
               </button>
               <button
                 onClick={() => setLaunched(false)}
-                className="flex-1 bg-white/10 text-white font-semibold py-2.5 rounded-xl text-sm hover:bg-white/20 transition"
+                className="flex-1 min-w-[120px] bg-white/8 text-white/60 font-semibold py-2.5 rounded-xl text-sm hover:bg-white/15 hover:text-white/80 transition"
               >
-                Edit Setup
+                ✎ Edit Setup
               </button>
             </div>
+
+            {/* QR Code */}
+            {showQR && (
+              <div className="flex flex-col items-center gap-3 py-2">
+                {qrTooLong ? (
+                  <div className="bg-red-500/15 border border-red-400/30 rounded-xl p-4 text-center max-w-xs">
+                    <p className="text-red-300 text-sm font-semibold">URL too long for QR code</p>
+                    <p className="text-red-300/70 text-xs mt-1 leading-relaxed">
+                      The session has too much data. Try shortening persona descriptions, or share the link text instead.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div
+                      ref={qrWrapRef}
+                      className="bg-white p-4 rounded-2xl shadow-xl"
+                    >
+                      <QRCodeCanvas
+                        value={slimUrl}
+                        size={220}
+                        level="L"
+                        includeMargin={false}
+                      />
+                    </div>
+                    {qrLong && (
+                      <p className="text-yellow-300/70 text-[11px] text-center max-w-[260px] leading-relaxed">
+                        QR is complex due to session size. Ensure good lighting and hold the camera steady.
+                      </p>
+                    )}
+                    <div className="flex gap-3">
+                      <button
+                        onClick={downloadQR}
+                        className="text-amber text-xs font-semibold hover:text-amber/70 transition"
+                      >
+                        ↓ Download QR Image
+                      </button>
+                    </div>
+                    <p className="text-white/30 text-[11px] text-center">
+                      Participants scan to join — no link needed
+                    </p>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Reset Session */}
+            <div className="border-t border-white/10 pt-3">
+              {resetConfirm ? (
+                <div className="space-y-2">
+                  <p className="text-white/60 text-xs text-center">
+                    This generates a new session link. Tell participants to refresh their browser or scan the new QR.
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleReset}
+                      className="flex-1 bg-red-500/80 hover:bg-red-500 text-white font-bold py-2.5 rounded-xl text-sm transition"
+                    >
+                      Yes, Reset Session
+                    </button>
+                    <button
+                      onClick={() => setResetConfirm(false)}
+                      className="flex-1 bg-white/10 text-white/70 font-semibold py-2.5 rounded-xl text-sm hover:bg-white/20 transition"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setResetConfirm(true)}
+                  className="w-full text-white/40 text-xs font-medium py-2 rounded-xl hover:text-red-300/80 hover:bg-red-500/10 transition"
+                >
+                  ↺ Reset Session
+                </button>
+              )}
+            </div>
+
           </div>
         </div>
       )}
 
       <div className="max-w-2xl mx-auto px-5 py-7 space-y-6">
 
-        {/* API Key */}
+        {/* ── Saved Templates ── */}
+        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
+          <button
+            onClick={() => setTemplatesExpanded(v => !v)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-navy/3 transition-colors"
+          >
+            <div className="flex items-center gap-2.5">
+              <span className="text-navy/40 text-base">📋</span>
+              <span className="font-heading text-base text-navy font-semibold">Saved Templates</span>
+              {templates.length > 0 && (
+                <span className="bg-amber/20 text-amber text-[11px] font-bold px-2 py-0.5 rounded-full">
+                  {templates.length}
+                </span>
+              )}
+            </div>
+            <span className="text-navy/30 text-xs">{templatesExpanded ? '▲ Hide' : '▼ Show'}</span>
+          </button>
+
+          {templatesExpanded && (
+            <div className="border-t border-navy/8 px-5 pb-5 pt-4">
+              {templates.length === 0 ? (
+                <div className="text-center py-6">
+                  <p className="text-navy/40 text-sm">No templates saved yet.</p>
+                  <p className="text-navy/30 text-xs mt-1">
+                    Fill in a session below and click <strong>Save as Template</strong> to reuse it later.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {templates.map(tpl => (
+                    <div
+                      key={tpl.id}
+                      className={`border rounded-xl p-3.5 space-y-2.5 transition-all ${
+                        activeTemplateId === tpl.id
+                          ? 'border-amber/50 bg-amber/5'
+                          : 'border-navy/12 hover:border-navy/25'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-semibold text-navy text-sm leading-tight">{tpl.name}</p>
+                          {activeTemplateId === tpl.id && (
+                            <span className="text-[10px] bg-amber/20 text-amber font-bold px-1.5 py-0.5 rounded-full shrink-0">
+                              Active
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-navy/50 text-xs mt-0.5">
+                          {tpl.config.framework || 'No framework'} · {tpl.config.personas?.length || 0} persona{tpl.config.personas?.length !== 1 ? 's' : ''}
+                        </p>
+                        <p className="text-navy/30 text-[11px] mt-0.5">{formatDate(tpl.savedAt)}</p>
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <button
+                          onClick={() => handleLoadTemplate(tpl)}
+                          className="flex-1 bg-amber/15 hover:bg-amber/25 text-amber font-bold text-xs py-2 rounded-lg transition"
+                        >
+                          Load
+                        </button>
+                        {deleteConfirmId === tpl.id ? (
+                          <div className="flex gap-1 flex-1">
+                            <button
+                              onClick={() => { deleteTemplate(tpl.id); setDeleteConfirmId(null); if (activeTemplateId === tpl.id) setActiveTemplateId(null); }}
+                              className="flex-1 bg-red-500 text-white text-xs font-bold py-2 rounded-lg"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              onClick={() => setDeleteConfirmId(null)}
+                              className="flex-1 bg-navy/10 text-navy text-xs font-semibold py-2 rounded-lg"
+                            >
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setDeleteConfirmId(tpl.id)}
+                            className="px-3 text-navy/30 hover:text-red-400 text-xs font-semibold py-2 rounded-lg hover:bg-red-50 transition"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Active template banner ── */}
+        {activeTemplateName && !launched && (
+          <div className="bg-amber/10 border border-amber/25 rounded-xl px-4 py-2.5 flex items-center justify-between gap-3">
+            <p className="text-navy/70 text-xs">
+              <span className="font-semibold text-amber">Template loaded:</span> {activeTemplateName}
+            </p>
+            <button
+              onClick={() => setActiveTemplateId(null)}
+              className="text-navy/30 hover:text-navy/60 text-xs shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* ── API Config ── */}
         <Card title="API Configuration">
           <Field
             label="API Key *"
@@ -199,7 +518,7 @@ export default function FacilitatorSetup() {
           />
         </Card>
 
-        {/* Session Details */}
+        {/* ── Session Details ── */}
         <Card title="Session Details">
           <Field
             label="Topic"
@@ -237,20 +556,16 @@ export default function FacilitatorSetup() {
                 min={3}
                 max={50}
                 value={config.turnLimit}
-                onChange={e =>
-                  setShared('turnLimit', Math.min(50, Math.max(3, parseInt(e.target.value, 10) || 10)))
-                }
+                onChange={e => setShared('turnLimit', Math.min(50, Math.max(3, parseInt(e.target.value, 10) || 10)))}
                 className="w-24 border border-navy/20 rounded-xl px-4 py-2.5 text-navy focus:outline-none focus:ring-2 focus:ring-amber/40 text-sm"
               />
               <span className="text-navy/50 text-sm">turns max (3–50)</span>
             </div>
-            <p className="text-xs text-navy/40 mt-1">
-              Auto-triggers debrief when reached. Facilitator can end session at any time.
-            </p>
+            <p className="text-xs text-navy/40 mt-1">Auto-triggers debrief when reached. Facilitator can end at any time.</p>
           </div>
         </Card>
 
-        {/* End-in-Mind — shared across all personas */}
+        {/* ── Desired Outcome ── */}
         <Card title="Desired Outcome">
           <TextArea
             label="End-in-Mind (shared across all personas) *"
@@ -258,12 +573,12 @@ export default function FacilitatorSetup() {
             onChange={v => setShared('endInMind', v)}
             placeholder="e.g. The employee acknowledges the impact of their behaviour and commits to a specific, time-bound improvement action."
             rows={3}
-            hint="Describe the ideal outcome of the conversation — not the method. Focus on what the employee says, agrees to, or commits to by the end."
+            hint="Describe the ideal outcome — not the method. Focus on what the employee says, agrees to, or commits to."
             error={fieldErrors.shared?.endInMind}
           />
         </Card>
 
-        {/* Personas Section */}
+        {/* ── Employee Personas ── */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -291,7 +606,7 @@ export default function FacilitatorSetup() {
             </div>
           </div>
 
-          {/* Persona Assignment Toggle — only when 2+ personas */}
+          {/* Persona Assignment Toggle */}
           {config.personas.length > 1 && (
             <div className="bg-white/8 rounded-xl px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
               <div>
@@ -339,24 +654,18 @@ export default function FacilitatorSetup() {
           </div>
         </div>
 
-        {/* Launch */}
+        {/* ── Validation errors summary ── */}
         {hasAnyErrors && (
           <div className="bg-red-500/15 border border-red-500/30 rounded-xl px-4 py-3" data-field-error="true">
-            <p className="text-red-400 text-sm font-semibold">Please fix the following before launching:</p>
-            <ul className="mt-1.5 space-y-0.5">
-              {fieldErrors.shared?.framework && (
-                <li className="text-red-300/80 text-xs">• Learning Framework is required</li>
-              )}
-              {fieldErrors.shared?.frameworkSteps && (
-                <li className="text-red-300/80 text-xs">• Framework Steps is required</li>
-              )}
-              {fieldErrors.shared?.endInMind && (
-                <li className="text-red-300/80 text-xs">• End-in-Mind is required</li>
-              )}
+            <p className="text-red-400 text-sm font-semibold mb-1.5">Please fix the following before launching:</p>
+            <ul className="space-y-0.5">
+              {fieldErrors.shared?.framework && <li className="text-red-300/80 text-xs">• Learning Framework is required</li>}
+              {fieldErrors.shared?.frameworkSteps && <li className="text-red-300/80 text-xs">• Framework Steps is required</li>}
+              {fieldErrors.shared?.endInMind && <li className="text-red-300/80 text-xs">• End-in-Mind is required</li>}
               {(fieldErrors.personas || []).map((p, i) =>
                 Object.keys(p || {}).length > 0 ? (
                   <li key={i} className="text-red-300/80 text-xs">
-                    • Persona {i + 1}: {Object.keys(p).join(', ')} incomplete
+                    • Persona {i + 1}: {Object.keys(p).join(', ')} {Object.keys(p).length === 1 ? 'is' : 'are'} incomplete
                   </li>
                 ) : null
               )}
@@ -364,16 +673,68 @@ export default function FacilitatorSetup() {
           </div>
         )}
 
+        {/* ── Template Save Actions ── */}
+        {saveDialogOpen ? (
+          <div className="bg-amber/10 border border-amber/30 rounded-xl p-4 space-y-3">
+            <p className="text-navy text-sm font-semibold">Save as Template</p>
+            <input
+              type="text"
+              value={templateName}
+              onChange={e => setTemplateName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && templateName.trim()) handleSaveTemplate(); if (e.key === 'Escape') setSaveDialogOpen(false); }}
+              placeholder="Template name..."
+              autoFocus
+              className="w-full border border-navy/20 rounded-xl px-4 py-2.5 text-navy placeholder:text-navy/30 text-sm focus:outline-none focus:ring-2 focus:ring-amber/40"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveTemplate}
+                disabled={!templateName.trim()}
+                className="flex-1 bg-amber text-navy font-bold py-2.5 rounded-xl text-sm hover:bg-amber/90 disabled:opacity-40 transition"
+              >
+                Save Template
+              </button>
+              <button
+                onClick={() => setSaveDialogOpen(false)}
+                className="px-4 bg-navy/10 text-navy font-semibold py-2.5 rounded-xl text-sm hover:bg-navy/20 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex gap-2">
+            <button
+              onClick={openSaveDialog}
+              className="flex-1 bg-white/8 text-white/60 font-semibold py-3 rounded-2xl text-sm hover:bg-white/12 hover:text-white/80 transition border border-white/10"
+            >
+              💾 Save as Template
+            </button>
+            {activeTemplateId && (
+              <button
+                onClick={handleUpdateTemplate}
+                className="flex-1 bg-white/8 text-amber/70 font-semibold py-3 rounded-2xl text-sm hover:bg-white/12 hover:text-amber transition border border-amber/20"
+              >
+                ↑ Update Template
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* ── Launch Button ── */}
         <button
           onClick={handleLaunch}
           className="w-full bg-amber text-navy font-bold py-4 rounded-2xl text-base hover:bg-amber/90 active:scale-[0.98] transition-all shadow-lg shadow-amber/20"
         >
-          Launch Session
+          {launched ? '↺ Re-launch Session' : 'Launch Session'}
         </button>
+
       </div>
     </div>
   );
 }
+
+// ── Sub-components ──
 
 function Card({ title, children }) {
   return (
