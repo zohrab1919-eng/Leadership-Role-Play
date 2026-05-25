@@ -1,19 +1,18 @@
-const MODEL = 'claude-sonnet-4-5';
+const API_URL = 'https://api.deepseek.com/v1/chat/completions';
+const MODEL = 'deepseek-chat';
 
 export async function sendMessage(systemPrompt, conversationHistory, userMessage, apiKey) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 512,
-      system: systemPrompt,
       messages: [
+        { role: 'system', content: systemPrompt },
         ...conversationHistory,
         { role: 'user', content: userMessage },
       ],
@@ -24,23 +23,23 @@ export async function sendMessage(systemPrompt, conversationHistory, userMessage
   if (!response.ok) {
     throw new Error(data.error?.message || `API error ${response.status}`);
   }
-  return data.content[0].text;
+  return data.choices[0].message.content;
 }
 
 export async function requestDebrief(debriefPrompt, apiKey) {
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch(API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true',
+      'Authorization': `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
       model: MODEL,
       max_tokens: 2048,
-      system: 'You are a skilled leadership development coach. Return only valid JSON when asked.',
-      messages: [{ role: 'user', content: debriefPrompt }],
+      messages: [
+        { role: 'system', content: 'You are a skilled leadership development coach. Return only valid JSON when asked.' },
+        { role: 'user', content: debriefPrompt },
+      ],
     }),
   });
 
@@ -48,5 +47,5 @@ export async function requestDebrief(debriefPrompt, apiKey) {
   if (!response.ok) {
     throw new Error(data.error?.message || `API error ${response.status}`);
   }
-  return data.content[0].text;
+  return data.choices[0].message.content;
 }
