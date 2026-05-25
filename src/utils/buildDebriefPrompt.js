@@ -35,5 +35,7 @@ Scoring:
 - Conversation Technique: Tone, questioning style, empathy, clarity, non-blaming language
 - Achievement of End-in-Mind: Did the conversation reach or move meaningfully toward the desired outcome?
 
-Be encouraging but honest. Write as a skilled leadership coach giving developmental feedback. Reference actual moments from the transcript.`;
+Be encouraging but honest. Write as a skilled leadership coach giving developmental feedback. Reference actual moments from the transcript.
+
+Important: The manager may have communicated in Manglish (a natural mix of English and Bahasa Malaysia common in Malaysian workplaces). Do not penalise this — evaluate the intent, technique, and impact of their communication, not grammatical perfection. Manglish is a valid and normal communication style in this context.`;
 }
