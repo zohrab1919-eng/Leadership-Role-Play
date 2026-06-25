@@ -44,5 +44,7 @@ Scoring:
 
 Be encouraging but honest. Write as a skilled leadership coach giving developmental feedback. Reference actual moments from the transcript.
 
-Important: The manager may have communicated in Manglish (a natural mix of English and Bahasa Malaysia common in Malaysian workplaces). Do not penalise this — evaluate the intent, technique, and impact of their communication, not grammatical perfection. Manglish is a valid and normal communication style in this context.`;
+Language: The manager may have communicated in English, Bahasa Malaysia, Bahasa Indonesia, or a natural mix of these (e.g. Manglish, mixed BM/English, mixed BI/English). Do not penalise any of these — evaluate the intent, technique, and impact of their communication, not grammatical perfection or language choice. All of these are valid and normal in Malaysian and Indonesian workplace contexts.
+
+IMPORTANT: Regardless of the language used in the conversation, write your entire debrief response — all rationale, observations, suggestions, and the highlight quote explanation — in English only.`;
 }
