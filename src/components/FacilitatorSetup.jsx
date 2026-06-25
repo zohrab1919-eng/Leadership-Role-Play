@@ -30,14 +30,31 @@ const DEFAULTS = {
   personas: [{ ...DEFAULT_PERSONA, id: 'persona_1' }],
 };
 
-// Always strips previewSummary from personas — participants don't need it.
-// Uses LZString compression to keep the URL short enough for a scannable QR code.
+// Minify config to short keys before compression.
+// Strips fields the participant doesn't need (sessionId, per-persona id, previewSummary).
+// Empty optional fields are omitted entirely to keep payload small.
 function encodeConfig(config) {
-  const slim = {
-    ...config,
-    personas: (config.personas || []).map(({ previewSummary: _p, ...rest }) => rest),
+  const mini = {
+    fw: config.framework,
+    fs: config.frameworkSteps,
+    em: config.endInMind,
+    tl: config.turnLimit,
+    pa: config.personaAssignment,
+    ...(config.topic ? { t: config.topic } : {}),
+    ...(config.backgroundContext ? { bc: config.backgroundContext } : {}),
+    p: (config.personas || []).map(p => ({
+      n: p.name,
+      r: p.role,
+      bt: p.behaviouralTags,
+      es: p.emotionalState,
+      dl: p.difficultyLevel,
+      sw: p.situationWhat,
+      ep: p.situationEmployeePOV,
+      ...(p.behaviouralNote ? { bn: p.behaviouralNote } : {}),
+      ...(p.situationHistory ? { sh: p.situationHistory } : {}),
+    })),
   };
-  return LZString.compressToEncodedURIComponent(JSON.stringify(slim));
+  return LZString.compressToEncodedURIComponent(JSON.stringify(mini));
 }
 
 function validateConfig(config) {
@@ -366,7 +383,7 @@ export default function FacilitatorSetup() {
                     >
                       <QRCodeCanvas
                         value={slimUrl}
-                        size={220}
+                        size={280}
                         level="L"
                         includeMargin={false}
                       />

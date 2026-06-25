@@ -2,11 +2,39 @@ import { useState, useEffect } from 'react';
 import LZString from 'lz-string';
 import { useSession } from '../context/SessionContext';
 
+// Expand minified keys (produced by the new encodeConfig) back to full field names.
+// Detected by presence of 'fw' key (mini) vs 'framework' key (old full format).
+function expandIfMini(obj) {
+  if (!('fw' in obj)) return obj; // already full format
+  return {
+    topic: obj.t || '',
+    framework: obj.fw || '',
+    frameworkSteps: obj.fs || '',
+    backgroundContext: obj.bc || '',
+    endInMind: obj.em || '',
+    turnLimit: obj.tl ?? 10,
+    personaAssignment: obj.pa || 'facilitator',
+    personas: (obj.p || []).map((p, i) => ({
+      id: `persona_${i + 1}`,
+      name: p.n || '',
+      role: p.r || '',
+      behaviouralTags: p.bt || [],
+      behaviouralNote: p.bn || '',
+      emotionalState: p.es || '',
+      difficultyLevel: p.dl || '',
+      situationWhat: p.sw || '',
+      situationHistory: p.sh || '',
+      situationEmployeePOV: p.ep || '',
+      previewSummary: '',
+    })),
+  };
+}
+
 function decodeConfig(encoded) {
   // Try new compressed format first
   try {
     const decompressed = LZString.decompressFromEncodedURIComponent(encoded);
-    if (decompressed) return JSON.parse(decompressed);
+    if (decompressed) return expandIfMini(JSON.parse(decompressed));
   } catch { /* fall through */ }
   // Fall back to old plain base64 format (backward compat with existing shared links)
   return JSON.parse(decodeURIComponent(escape(atob(encoded))));
