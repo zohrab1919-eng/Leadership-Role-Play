@@ -30,6 +30,7 @@ export default function ConversationScreen() {
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const pendingHistoryRef = useRef(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -69,9 +70,8 @@ export default function ConversationScreen() {
       const newTurn = turnCount + 1;
       setTurnCount(newTurn);
       if (newTurn >= effectiveConfig.turnLimit) {
-        // Let finally run first so the AI's last reply renders, then queue debrief
+        pendingHistoryRef.current = finalHistory;
         setLimitReached(true);
-        setTimeout(() => triggerDebrief(finalHistory), 2500);
       }
     } catch (err) {
       setError(err.message);
@@ -191,9 +191,17 @@ export default function ConversationScreen() {
         )}
 
         {limitReached && (
-          <div className="bg-amber/15 border border-amber/30 rounded-2xl px-4 py-3.5 text-center space-y-0.5">
-            <p className="text-amber text-sm font-semibold">Session complete</p>
-            <p className="text-white/45 text-xs">Generating your debrief…</p>
+          <div className="bg-amber/15 border border-amber/30 rounded-2xl px-4 py-5 text-center space-y-3">
+            <div>
+              <p className="text-amber text-sm font-semibold">Session complete</p>
+              <p className="text-white/45 text-xs mt-0.5">Take a moment to reflect, then tap when ready.</p>
+            </div>
+            <button
+              onClick={() => triggerDebrief(pendingHistoryRef.current)}
+              className="bg-amber text-navy font-bold text-sm px-6 py-3 rounded-xl hover:bg-amber/90 active:scale-95 transition-all w-full"
+            >
+              Generate My Debrief
+            </button>
           </div>
         )}
 
