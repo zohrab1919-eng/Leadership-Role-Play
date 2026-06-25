@@ -26,6 +26,7 @@ export default function ConversationScreen() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [debriefing, setDebriefing] = useState(false);
+  const [limitReached, setLimitReached] = useState(false);
   const [error, setError] = useState('');
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
@@ -68,7 +69,9 @@ export default function ConversationScreen() {
       const newTurn = turnCount + 1;
       setTurnCount(newTurn);
       if (newTurn >= effectiveConfig.turnLimit) {
-        await triggerDebrief(finalHistory);
+        // Let finally run first so the AI's last reply renders, then queue debrief
+        setLimitReached(true);
+        setTimeout(() => triggerDebrief(finalHistory), 2500);
       }
     } catch (err) {
       setError(err.message);
@@ -133,7 +136,7 @@ export default function ConversationScreen() {
           </span>
           <button
             onClick={handleEndSession}
-            disabled={conversationHistory.length === 0 || sending}
+            disabled={conversationHistory.length === 0 || sending || limitReached}
             className="bg-amber text-navy font-bold text-xs px-3 py-2 rounded-xl hover:bg-amber/90 active:scale-95 transition-all disabled:opacity-40"
           >
             End Session
@@ -181,9 +184,16 @@ export default function ConversationScreen() {
           </div>
         )}
 
-        {nearLimit && (
+        {nearLimit && !limitReached && (
           <div className="bg-orange-500/10 border border-orange-500/30 text-orange-300 text-xs rounded-xl px-4 py-2.5 text-center">
             {turnsLeft} turn{turnsLeft !== 1 ? 's' : ''} remaining — consider wrapping up or clicking End Session.
+          </div>
+        )}
+
+        {limitReached && (
+          <div className="bg-amber/15 border border-amber/30 rounded-2xl px-4 py-3.5 text-center space-y-0.5">
+            <p className="text-amber text-sm font-semibold">Session complete</p>
+            <p className="text-white/45 text-xs">Generating your debrief…</p>
           </div>
         )}
 
@@ -200,12 +210,12 @@ export default function ConversationScreen() {
             onKeyDown={handleKeyDown}
             placeholder="Type your message… (Enter to send)"
             rows={2}
-            disabled={sending}
+            disabled={sending || limitReached}
             className="flex-1 bg-white/10 text-white placeholder:text-white/25 border border-white/15 rounded-2xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-amber/40 disabled:opacity-50 leading-relaxed"
           />
           <button
             onClick={handleSend}
-            disabled={!input.trim() || sending}
+            disabled={!input.trim() || sending || limitReached}
             className="bg-amber text-navy p-3 rounded-2xl hover:bg-amber/90 active:scale-95 transition-all disabled:opacity-40 shrink-0 mb-px"
             aria-label="Send"
           >
