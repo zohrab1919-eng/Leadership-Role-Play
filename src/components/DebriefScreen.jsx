@@ -9,6 +9,7 @@ export default function DebriefScreen() {
     selectedPersona,
     conversationHistory,
     participantName,
+    selfRating,
     resetConversation,
     newPersona,
   } = useSession();
@@ -62,6 +63,29 @@ export default function DebriefScreen() {
         <section>
           <h2 className="font-heading text-base text-white font-semibold mb-3">Performance Ratings</h2>
           <div className="space-y-3">
+
+            {/* Self-rating */}
+            {selfRating != null && (
+              <div className="bg-white/8 border border-white/15 rounded-2xl p-5">
+                <div className="flex items-start justify-between gap-4 mb-3">
+                  <div>
+                    <p className="font-semibold text-white text-sm">Your Self-Rating</p>
+                    <p className="text-white/35 text-xs mt-0.5">Your own assessment before seeing results</p>
+                  </div>
+                  <div className="flex gap-0.5 shrink-0 mt-0.5">
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <svg key={i} className={`w-4 h-4 ${i <= selfRating ? 'text-amber' : 'text-white/15'}`} viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
+                    ))}
+                  </div>
+                </div>
+                <p className="font-heading font-bold text-3xl text-amber">
+                  {selfRating}<span className="text-base font-sans font-normal text-white/30">/5</span>
+                </p>
+              </div>
+            )}
+
             <ScoreCard label="Framework Application" score={ratings.frameworkApplication.score} rationale={ratings.frameworkApplication.rationale} />
             <ScoreCard label="Conversation Technique" score={ratings.conversationTechnique.score} rationale={ratings.conversationTechnique.rationale} />
             <ScoreCard label="Achievement of End-in-Mind" score={ratings.achievementOfEndInMind.score} rationale={ratings.achievementOfEndInMind.rationale} />

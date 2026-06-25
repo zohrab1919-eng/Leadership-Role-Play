@@ -10,6 +10,7 @@ export function SessionProvider({ children }) {
   const [currentScreen, setCurrentScreen] = useState('lobby');
   const [debriefData, setDebriefData] = useState(null);
   const [turnCount, setTurnCount] = useState(0);
+  const [selfRating, setSelfRating] = useState(null);
   const [apiKey, setApiKey] = useState(
     typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_ANTHROPIC_API_KEY || '') : ''
   );
@@ -19,6 +20,7 @@ export function SessionProvider({ children }) {
     setConversationHistory([]);
     setDebriefData(null);
     setTurnCount(0);
+    setSelfRating(null);
     setCurrentScreen('conversation');
   }, []);
 
@@ -28,6 +30,7 @@ export function SessionProvider({ children }) {
     setConversationHistory([]);
     setDebriefData(null);
     setTurnCount(0);
+    setSelfRating(null);
     setSelectedPersona(null);
     const hasMultiple = cfg?.personas?.length > 1;
     setCurrentScreen(hasMultiple ? 'personaSelect' : 'brief');
@@ -40,6 +43,7 @@ export function SessionProvider({ children }) {
     setConversationHistory([]);
     setDebriefData(null);
     setTurnCount(0);
+    setSelfRating(null);
     setParticipantName('');
     setCurrentScreen('lobby');
   }, []);
@@ -53,6 +57,7 @@ export function SessionProvider({ children }) {
       currentScreen, setCurrentScreen,
       debriefData, setDebriefData,
       turnCount, setTurnCount,
+      selfRating, setSelfRating,
       apiKey, setApiKey,
       resetConversation,
       newPersona,

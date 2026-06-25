@@ -14,6 +14,7 @@ export default function ConversationScreen() {
     setCurrentScreen,
     setDebriefData,
     turnCount, setTurnCount,
+    setSelfRating,
     apiKey,
   } = useSession();
 
@@ -27,7 +28,10 @@ export default function ConversationScreen() {
   const [sending, setSending] = useState(false);
   const [debriefing, setDebriefing] = useState(false);
   const [limitReached, setLimitReached] = useState(false);
+  const [starRating, setStarRating] = useState(0);
   const [error, setError] = useState('');
+
+  const STAR_LABELS = { 1: 'Needs a lot of work', 2: 'Could do better', 3: 'Decent attempt', 4: 'Good effort', 5: 'Nailed it!' };
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
   const pendingHistoryRef = useRef(null);
@@ -90,8 +94,14 @@ export default function ConversationScreen() {
   };
 
   const handleEndSession = () => {
-    if (conversationHistory.length === 0 || sending || debriefing) return;
-    triggerDebrief(conversationHistory);
+    if (conversationHistory.length === 0 || sending || debriefing || limitReached) return;
+    pendingHistoryRef.current = conversationHistory;
+    setLimitReached(true);
+  };
+
+  const handleGenerateDebrief = () => {
+    setSelfRating(starRating);
+    triggerDebrief(pendingHistoryRef.current);
   };
 
   if (debriefing) {
@@ -191,14 +201,40 @@ export default function ConversationScreen() {
         )}
 
         {limitReached && (
-          <div className="bg-amber/15 border border-amber/30 rounded-2xl px-4 py-5 text-center space-y-3">
-            <div>
+          <div className="bg-amber/15 border border-amber/30 rounded-2xl px-4 py-5 space-y-4">
+            <div className="text-center">
               <p className="text-amber text-sm font-semibold">Session complete</p>
-              <p className="text-white/45 text-xs mt-0.5">Take a moment to reflect, then tap when ready.</p>
+              <p className="text-white/45 text-xs mt-0.5">Take a moment to reflect before your debrief.</p>
             </div>
+
+            <div className="text-center">
+              <p className="text-white/60 text-xs mb-3">How do you think you performed?</p>
+              <div className="flex justify-center gap-1">
+                {[1, 2, 3, 4, 5].map(i => (
+                  <button
+                    key={i}
+                    onClick={() => setStarRating(i)}
+                    className="p-1.5 transition-transform active:scale-90"
+                    aria-label={`${i} star${i > 1 ? 's' : ''}`}
+                  >
+                    <svg
+                      className={`w-9 h-9 transition-colors ${i <= starRating ? 'text-amber' : 'text-white/20'}`}
+                      viewBox="0 0 24 24" fill="currentColor"
+                    >
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                  </button>
+                ))}
+              </div>
+              <p className="text-white/35 text-xs mt-2 h-4">
+                {starRating > 0 ? STAR_LABELS[starRating] : ''}
+              </p>
+            </div>
+
             <button
-              onClick={() => triggerDebrief(pendingHistoryRef.current)}
-              className="bg-amber text-navy font-bold text-sm px-6 py-3 rounded-xl hover:bg-amber/90 active:scale-95 transition-all w-full"
+              onClick={handleGenerateDebrief}
+              disabled={starRating === 0}
+              className="bg-amber text-navy font-bold text-sm py-3 rounded-xl hover:bg-amber/90 active:scale-95 transition-all w-full disabled:opacity-35"
             >
               Generate My Debrief
             </button>
