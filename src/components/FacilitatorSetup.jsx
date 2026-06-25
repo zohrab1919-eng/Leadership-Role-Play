@@ -1,4 +1,5 @@
 import { useState, useRef, useMemo } from 'react';
+import LZString from 'lz-string';
 import { QRCodeCanvas } from 'qrcode.react';
 import { useSession } from '../context/SessionContext';
 import PersonaCard from './PersonaCard';
@@ -29,13 +30,14 @@ const DEFAULTS = {
   personas: [{ ...DEFAULT_PERSONA, id: 'persona_1' }],
 };
 
-// Always strips previewSummary from personas — participants don't need it
+// Always strips previewSummary from personas — participants don't need it.
+// Uses LZString compression to keep the URL short enough for a scannable QR code.
 function encodeConfig(config) {
   const slim = {
     ...config,
     personas: (config.personas || []).map(({ previewSummary: _p, ...rest }) => rest),
   };
-  return btoa(unescape(encodeURIComponent(JSON.stringify(slim))));
+  return LZString.compressToEncodedURIComponent(JSON.stringify(slim));
 }
 
 function validateConfig(config) {
@@ -105,7 +107,7 @@ export default function FacilitatorSetup() {
   }, [sessionUrl]);
 
   const qrTooLong = slimUrl.length > 2953;
-  const qrLong = !qrTooLong && slimUrl.length > 2200;
+  const qrLong = !qrTooLong && slimUrl.length > 1800;
 
   // ── Config setters ──
   const setShared = (field, value) => {

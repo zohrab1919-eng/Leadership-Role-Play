@@ -1,7 +1,14 @@
 import { useState, useEffect } from 'react';
+import LZString from 'lz-string';
 import { useSession } from '../context/SessionContext';
 
 function decodeConfig(encoded) {
+  // Try new compressed format first
+  try {
+    const decompressed = LZString.decompressFromEncodedURIComponent(encoded);
+    if (decompressed) return JSON.parse(decompressed);
+  } catch { /* fall through */ }
+  // Fall back to old plain base64 format (backward compat with existing shared links)
   return JSON.parse(decodeURIComponent(escape(atob(encoded))));
 }
 
